@@ -1,0 +1,7 @@
+width           = 25
+height          = 9
+entry           = 0,0
+exit            = 24,8
+output_file     = maze.txt
+perfect         = True
+# seed          = 42
