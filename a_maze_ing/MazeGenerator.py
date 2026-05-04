@@ -75,8 +75,10 @@ class MazeGenerator:
                 self.maze[ty][tx].static = True
                 self.maze[ty][tx].visited = True
         else:
-            print("Error: Maze size too small for '42' pattern.")
-            exit(0)
+            print(
+                "Info: Maze size too small for '42' pattern,"
+                " it will be omitted."
+            )
 
     def render_frame(
         self,
@@ -84,7 +86,7 @@ class MazeGenerator:
         save: bool = False,
         wall_style: str = "█"
     ) -> str:
-        """Render the current maze frame to the terminal or return as string."""
+        """Render the maze frame to the terminal or return as string."""
         wall_char: str = wall_style
         BULLET_COLOR: str = MAGENTA
         rendered: str = ""
@@ -118,7 +120,7 @@ class MazeGenerator:
                     cell_representation = "   "
 
                 if cell.walls & 1:
-                    line1 += f"{wall_char}{wall_char}{wall_char}{wall_char}{wall_char}"
+                    line1 += wall_char * 5
                 else:
                     line1 += f"{wall_char}   {wall_char}"
 
@@ -126,7 +128,7 @@ class MazeGenerator:
                 right = wall_char if cell.walls & 2 else " "
 
                 if cell.walls == 15:
-                    line2 += f"{wall_char}{wall_char}{wall_char}{wall_char}{wall_char}"
+                    line2 += wall_char * 5
                 else:
                     line2 += f"{left}{cell_representation}{right}"
 
@@ -137,11 +139,12 @@ class MazeGenerator:
                 print(f"{maze_color}{line1}")
                 print(f"{maze_color}{line2}")
 
+        bottom_row = wall_char * 5 * len(self.maze[0])
         if save:
-            rendered += f"{wall_char}{wall_char}{wall_char}{wall_char}{wall_char}" * len(self.maze[0])
+            rendered += bottom_row
             return f"{rendered}\n\n"
         else:
-            print(f"{maze_color}{wall_char}{wall_char}{wall_char}{wall_char}{wall_char}" * len(self.maze[0]))
+            print(f"{maze_color}{bottom_row}")
             if self.ANIMATION:
                 sleep(.03)
             return ""
@@ -209,7 +212,9 @@ class MazeGenerator:
                         and not (x == self.ENTRY['x'] and y == self.ENTRY['y'])
                         and not (x == self.EXIT['x'] and y == self.EXIT['y'])
                     ):
-                        cell_representation = f"{CYAN}{custom_solution}{maze_color}"
+                        cell_representation = (
+                            f"{CYAN}{custom_solution}{maze_color}"
+                        )
                     elif x == self.ENTRY['x'] and y == self.ENTRY['y']:
                         cell_representation = f"{MAGENTA} ● {maze_color}"
                     elif x == self.EXIT['x'] and y == self.EXIT['y']:
@@ -249,11 +254,14 @@ class MazeGenerator:
 
     def save_maze(self) -> None:
         """Save the maze in hex format with entry, exit, and solution."""
-        with open(self.OUTPUT_FILE, "w") as f:
-            f.write(self.get_maze_str())
-            f.write(f"\n{self.ENTRY['x']},{self.ENTRY['y']}")
-            f.write(f"\n{self.EXIT['x']},{self.EXIT['y']}\n")
-            f.write("".join(self.shortest()))
+        try:
+            with open(self.OUTPUT_FILE, "w") as f:
+                f.write(self.get_maze_str())
+                f.write(f"\n{self.ENTRY['x']},{self.ENTRY['y']}\n")
+                f.write(f"{self.EXIT['x']},{self.EXIT['y']}\n")
+                f.write(self.shortest() + "\n")
+        except Exception as e:
+            print(f"[!] Unable to save maze: {e}")
 
     def open_wall(self, cell: Cell, direction: str) -> None:
         """Remove the wall in the given direction from a cell."""
@@ -341,6 +349,46 @@ class MazeGenerator:
                 solve.pop()
         self.maze[y][x].visited = False
 
+    def _is_3x3_open_block(self, bx: int, by: int) -> bool:
+        """Return True if the 3x3 block at (bx, by) has no internal walls."""
+        if bx + 2 >= self.WIDTH or by + 2 >= self.HEIGHT:
+            return False
+        for dy in range(3):
+            for dx in range(3):
+                cell = self.maze[by + dy][bx + dx]
+                if cell.static:
+                    return False
+                if dx < 2 and (cell.walls & (1 << WALL_BITS['E'])):
+                    return False
+                if dy < 2 and (cell.walls & (1 << WALL_BITS['S'])):
+                    return False
+        return True
+
+    def _would_create_3x3(
+        self, cell: Cell, x: int, y: int,
+        nx: int, ny: int, direction: str
+    ) -> bool:
+        """Check if opening a wall would create a 3x3 open area."""
+        self.open_wall(cell, direction)
+        self.open_wall(self.maze[ny][nx], OPPOSITES[direction])
+
+        found = False
+        bx_start = max(0, min(x, nx) - 2)
+        bx_end = min(self.WIDTH - 3, max(x, nx))
+        by_start = max(0, min(y, ny) - 2)
+        by_end = min(self.HEIGHT - 3, max(y, ny))
+        for bx in range(bx_start, bx_end + 1):
+            for by in range(by_start, by_end + 1):
+                if self._is_3x3_open_block(bx, by):
+                    found = True
+                    break
+            if found:
+                break
+
+        cell.walls |= (1 << WALL_BITS[direction])
+        self.maze[ny][nx].walls |= (1 << WALL_BITS[OPPOSITES[direction]])
+        return found
+
     def create_multiple_paths(self) -> None:
         """Break additional walls to create a non-perfect (looping) maze."""
         x: int = 0
@@ -359,11 +407,15 @@ class MazeGenerator:
                     if x - 1 >= 0 and not self.maze[y][x - 1].static:
                         candidates.append((x - 1, y, "W"))
                     selected = choice(candidates)
-                    self.open_wall(cell, selected[2])
-                    self.open_wall(
-                        self.maze[selected[1]][selected[0]],
-                        OPPOSITES[selected[2]]
-                    )
+                    nx, ny = selected[0], selected[1]
+                    if not self._would_create_3x3(
+                        cell, x, y, nx, ny, selected[2]
+                    ):
+                        self.open_wall(cell, selected[2])
+                        self.open_wall(
+                            self.maze[ny][nx],
+                            OPPOSITES[selected[2]]
+                        )
                     candidates.clear()
                 x += 1
             y += 1

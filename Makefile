@@ -4,12 +4,12 @@ SRC      = a_maze_ing.py a_maze_ing
 PYTHON   = python3
 PIP      = pip
 
-.PHONY: all install run debug lint package clean
+.PHONY: all install run debug lint lint-strict package clean
 
 all: run
 
 install:
-	$(PYTHON) -m $(PIP) install --user flake8 mypy
+	$(PYTHON) -m $(PIP) install flake8 mypy wheel setuptools
 
 run:
 	$(PYTHON) $(NAME)
@@ -26,6 +26,10 @@ lint:
 	--disallow-untyped-defs \
 	--check-untyped-defs
 
+lint-strict:
+	$(PYTHON) -m flake8 $(SRC)
+	$(PYTHON) -m mypy . --strict
+
 package:
 	$(PYTHON) setup.py sdist bdist_wheel
 	mv dist/*.tar.gz .
@@ -33,5 +37,4 @@ package:
 
 clean:
 	rm -rf dist/ build/ *.egg-info
-	rm -rf *.tar.gz *.whl
-	find . -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -exec rm -rf {} \;
+	find . -type d \( -name "__pycache__" -o -name ".mypy_cache" \) -exec rm -rf {} +

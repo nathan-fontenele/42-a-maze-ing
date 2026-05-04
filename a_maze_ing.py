@@ -48,6 +48,9 @@ def main() -> None:
 
         gen: MazeGenerator = MazeGenerator(config_file, animation)
         gen.dfs_generate()
+        gen.reset_maze_visited()
+        gen.start_solving()
+        gen.render_frame(maze_color=maze_color)
         choice: int = 0
 
         while True:
